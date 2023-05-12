@@ -64,7 +64,17 @@ async function createWindow() {
 
   // Test actively push message to the Electron-Renderer
   win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', new Date().toLocaleString())
+    // 读取浏览器的 session
+    const session = win.webContents.session
+
+    // 下面的代码会尝试解析代理配置，如果用户配置了系统代理，
+    // 并且代理规则没有排除 www.google.com，那我们就可以读取到代理信息
+    session.resolveProxy('https://www.google.com').then((proxyUrl) => {
+      // DIRECT 表示没有配置代理
+      if (proxyUrl !== 'DIRECT') {
+        win?.webContents.send('proxy', proxyUrl)
+      }
+    })
   })
 
   // Make all links open with the browser, not with the application
@@ -76,7 +86,6 @@ async function createWindow() {
 }
 
 app.whenReady().then(createWindow)
-
 app.on('window-all-closed', () => {
   win = null
   if (process.platform !== 'darwin') app.quit()
