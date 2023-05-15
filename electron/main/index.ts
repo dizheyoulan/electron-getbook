@@ -1,7 +1,6 @@
 import { app, BrowserWindow, shell, ipcMain } from 'electron'
 import { release } from 'node:os'
 import { join } from 'node:path'
-
 // The built directory structure
 //
 // ├─┬ dist-electron
@@ -43,6 +42,8 @@ const indexHtml = join(process.env.DIST, 'index.html')
 async function createWindow() {
   win = new BrowserWindow({
     title: 'Main window',
+    width: 1080,
+    height: 720,
     icon: join(process.env.PUBLIC, 'favicon.ico'),
     webPreferences: {
       preload,
@@ -72,7 +73,7 @@ async function createWindow() {
     session.resolveProxy('https://www.google.com').then((proxyUrl) => {
       // DIRECT 表示没有配置代理
       if (proxyUrl !== 'DIRECT') {
-        win?.webContents.send('proxy', proxyUrl)
+        win?.webContents.send('proxy', proxyUrl,process.env.PORTABLE_EXECUTABLE_DIR)
       }
     })
   })

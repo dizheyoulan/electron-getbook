@@ -5,10 +5,15 @@
       maxWidth: '640px'
     }">
       <n-form-item label="网络状态：">
-        <p class="item-content">测试中... </p>
+        <div class="item-content">
+          <p v-if="formValue.status===0">测试中... </p>
+          <p class="green" v-if="formValue.status===1">可连接 </p>
+          <p class="red" v-if="formValue.status===2">无法连接 </p>
+        </div>
       </n-form-item>
       <n-form-item label="进度：">
-        <n-progress type="line" :percentage="60" indicator-placement="inside" :processing="processing" status="success" />
+        <n-progress type="line" :percentage="progress" indicator-placement="inside" :processing="processing"
+          status="success" />
       </n-form-item>
       <n-form-item label="URL前缀：">
         <n-input v-model:value="formValue.url" />
@@ -29,7 +34,7 @@
       <n-form-item label="下载模式：">
         <n-radio-group v-model:value="formValue.model" name="radiobuttongroup1">
           <n-radio-button :value="1" label="单线程下载" />
-          <n-radio-button :value="2" label="多线程下载" />
+          <n-radio-button :value="10" label="多线程下载" />
         </n-radio-group>
       </n-form-item>
     </n-form>
@@ -37,13 +42,17 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref } from 'vue'
-import { NButton, NInput, NInputNumber, NForm, NFormItem, NSwitch, NRadioGroup, NRadioButton, NProgress, NSpin, NAlert } from 'naive-ui'
+import { ref, computed, watch, VueElement } from 'vue'
+import { NButton, NInput, NInputNumber, NForm, NFormItem, NSwitch, NRadioGroup, NRadioButton, NProgress, useNotification } from 'naive-ui'
 const Crawler = require("crawler");
 import { ipcRenderer } from 'electron'
+const fs = require('fs');
+const path = require('path');
+let userDataPath = ''
 let proxy = ''
 ipcRenderer.on('proxy', (_event, ...args) => {
-  proxy = 'http://'+args[0].split(' ')[1]
+  proxy = 'http://' + args[0].split(' ')[1]
+  userDataPath = args[1]
 })
 export interface Props {
   msg?: string
@@ -52,53 +61,198 @@ const props = withDefaults(defineProps<Props>(), {
   msg: '输入参数，点击按钮开始下载',
 })
 const formValue = ref({
-  status: '测试中',
-  progress: '0/1',
+  status: 0,
   url: 'https://ncode.syosetu.com/n5677cl/',
-  count: 1,
+  count: 10,
   sleep: 5,
   clip: false,
   clipNum: 10,
-  model: 1
+  model: 10,
 })
-const processing = ref(true)
-const getNum = (e: MouseEvent) => {
+let completeNum = ref(0)
+let temp: any[] = []
+let title = ''
+let name = ''
+const progress = computed(() => Math.floor((completeNum.value / formValue.value.count) * 100))
+const processing = ref(false)
 
+const init = ()=>{
+  completeNum.value = 0
+  temp = []
+  title = ''
+  name = ''
 }
-const download = () => {
-  const baseURL = "https://ncode.syosetu.com/n5677cl/";
-
+const getNum = (e: MouseEvent) => {
   const crawler = new Crawler({
-    maxConnections: 10,
-    timeout: 1000,
-    // rateLimit: 1000,
-    callback: (error:any, res:any, done:any) => {
+    timeout: 5000,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    },
+    proxy,
+    callback: (error: any, res: any, done: any) => {
       if (error) {
         console.error(error);
       } else {
         const $ = res.$;
-
-        // 在这里处理页面数据，根据实际需要进行解析和提取
-
-        // 示例：打印页面标题
-        const title = $("title").text();
-        console.log(`Page Title: ${title}`);
+        formValue.value.count = $('.novel_sublist2').length
       }
-
+      done();
+    },
+  });
+  crawler.queue(formValue.value.url);
+}
+const download = () => {
+  
+  if(processing.value)return
+  init()
+  let urls = []
+  for (let i = 0; i < formValue.value.count; i++) {
+    urls[i] = `${formValue.value.url}${i + 1}/`
+  }
+  temp.length = formValue.value.count
+  processing.value = true
+  // console.log('urls', urls);
+  // console.log('proxy', proxy);
+  const firstcrawler = new Crawler({
+    timeout: 5000,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    },
+    proxy,
+    callback: (error: any, res: any, done: any) => {
+      if (error) {
+        console.error(error);
+      } else {
+        const $ = res.$;
+        title = $('.novel_title').text();
+        name = $('.novel_writername').text();
+      }
       done();
     },
   });
 
-  // 生成要爬取的URL列表
-  const urls = Array.from({ length: 1 }, (_, i) => `${baseURL}${i + 1}/`);
-  console.log(proxy);
-  
+  const crawler = new Crawler({
+    maxConnections: formValue.value.model,
+    timeout: 5000,
+    // rateLimit: 5000,
+    retryTimeout:formValue.value.sleep*1000,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    },
+    proxy,
+    callback: (error: any, res: any, done: any) => {
+      if (error) {
+        console.error(error);
+      } else {
+        const $ = res.$;
+        const index = +res.options.uri.replace(formValue.value.url, '').replace('/', '')
+        const stit = $('.novel_subtitle').text();
+        const content = $('#novel_honbun').text();
+        temp[index - 1] = { stit, content }
+        // console.log(stit,content);
+        completeNum.value++
+      }
+      done();
+    },
+  });
+
+
   // 启动爬虫
-  crawler.queue({
-    uri:baseURL,
-    proxy
+  firstcrawler.queue(formValue.value.url);
+  crawler.queue(urls);
+}
+const computedFlag = computed(()=>progress.value === 100 && title)
+watch(computedFlag, val => {
+  if (val) {
+    processing.value = false
+    if(formValue.value.clip){
+      writeClip()
+      write()
+    }else{
+      write()
+    }
+  }
+})
+const notification = useNotification()
+const write = () => {
+  let data = temp.map((item, index) => `第${index + 1}章 ${item.stit}\n\n${item.content}`).join('\n')
+  data = `${title}\n${name}\n` + data
+  fs.writeFile(path.join(userDataPath, `${title}.txt`), data, (err: any) => {
+    if (err) {
+      console.log(err);
+    } else {
+      notification['success']({
+        content: '下载完成',
+        meta: `${title} 下载完成`,
+        duration: 10000,
+        keepAliveOnHover: true
+      })
+    }
   });
 }
+function chunkArray(arr:any[], n:number) {
+  const chunkedArray = [];
+  let index = 0;
+
+  while (index < arr.length) {
+    chunkedArray.push(arr.slice(index, index + n));
+    index += n;
+  }
+  return chunkedArray;
+}
+
+const writeClip = () => {
+  let data = temp.map((item, index) => `第${index + 1}章 ${item.stit}\n\n${item.content}`)
+  let dataList = chunkArray(data,formValue.value.clipNum)
+  dataList[0][0]=`${title}\n${name}\n`+dataList[0][0]
+
+  dataList.forEach((item,index)=>{
+    fs.writeFile(path.join(userDataPath, `${title}-${index+1}.txt`), item.join('\n'), (err: any) => {
+      if (err) {
+        console.log(err);
+      } else {
+        if(index===dataList.length-1){
+          notification['success']({
+            content: '下载完成',
+            meta: `${title} 下载完成`,
+            duration: 10000,
+            keepAliveOnHover: true
+          })
+        }
+      }
+    });
+  })
+}
+let errCount = 0
+const loopPing = (link:string)=>{
+  const crawler = new Crawler({
+    timeout: 5000,
+    retries:0,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    },
+    proxy,
+    callback: (error: any, res: any, done: any) => {
+      
+      
+      if (error) {
+        errCount+=1
+        if(errCount===3){
+          formValue.value.status = 2
+        }
+      } else {
+        errCount = 0
+        formValue.value.status = 1
+      }
+      done();
+    },
+  });
+  crawler.queue(link);
+  setTimeout(() => {
+    loopPing(link);
+  }, 5000);
+}
+loopPing('https://ncode.syosetu.com/')
 </script>
 
 <style scoped>
@@ -118,6 +272,12 @@ h1 {
 
 .item-content {
   margin-left: 100px;
+}
+.green{
+  color: #18a058;
+}
+.red{
+  color: red;
 }
 
 .ml {
