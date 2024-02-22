@@ -3,6 +3,7 @@
 electron + vite + vue3 + crawler
 
 [下载链接](https://github.com/dizheyoulan/electron-getbook/releases/download/main/electron-getbook_2.0.0.exe ) 
+[download](https://github.com/dizheyoulan/electron-getbook/releases/download/main/electron-getbook_2.0.0.exe ) 
 
 使用时需开启全局代理，下载时不要修改参数
   
