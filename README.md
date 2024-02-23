@@ -12,3 +12,20 @@ electron + vite + vue3 + crawler
 ```bash
 yarn run build
 ```
+
+
+
+## 自用注释 
+
+### 安装electron失败就手动下载
+参考 https://github.com/huangshuwei/blog/issues/36
+
+### 打包失败就把zip放到electron缓存目录 
+C:\Users\你的用户名\AppData\Local\electron\Cache
+
+## 手动下载地址
+https://github.com/electron/electron/releases/download/v8.0.0/electron-v8.0.0-win32-x64.zip
+
+
+
+

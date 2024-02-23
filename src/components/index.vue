@@ -31,7 +31,7 @@
       <n-form-item label="每几章切分章节：" v-if="formValue.clip">
         <n-input-number v-model:value="formValue.clipNum" />
       </n-form-item>
-      <n-form-item label="下载模式：">
+      <n-form-item label="下载模式(多线程比较快，但是可能会被ban ip)：">
         <n-radio-group v-model:value="formValue.model" name="radiobuttongroup1">
           <n-radio-button :value="1" label="单线程下载" />
           <n-radio-button :value="10" label="多线程下载" />
@@ -48,11 +48,16 @@ const Crawler = require("crawler");
 import { ipcRenderer } from 'electron'
 const fs = require('fs');
 const path = require('path');
-let userDataPath = ''
+let userDataPath = path.resolve()
+console.log('userDataPath：',userDataPath);
 let proxy = ''
 ipcRenderer.on('proxy', (_event, ...args) => {
   proxy = 'http://' + args[0].split(' ')[1]
-  userDataPath = args[1]
+  console.log('args',args);
+  if(args[1]){
+    userDataPath = args[1]
+    console.log('userDataPath：',userDataPath);
+  }
 })
 export interface Props {
   msg?: string
@@ -75,7 +80,11 @@ let title = ''
 let name = ''
 const progress = computed(() => Math.floor((completeNum.value / formValue.value.count) * 100))
 const processing = ref(false)
-
+const headers = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+  'Cookie': 'over18=yes'
+}
+const timeout = 5000
 const init = ()=>{
   completeNum.value = 0
   temp = []
@@ -83,11 +92,11 @@ const init = ()=>{
   name = ''
 }
 const getNum = (e: MouseEvent) => {
+  if(processing.value)return
+  init()
   const crawler = new Crawler({
-    timeout: 5000,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-    },
+    timeout,
+    headers,
     proxy,
     callback: (error: any, res: any, done: any) => {
       if (error) {
@@ -95,6 +104,17 @@ const getNum = (e: MouseEvent) => {
       } else {
         const $ = res.$;
         formValue.value.count = $('.novel_sublist2').length
+        if(res.body.includes('Too many access')){
+          notification['error']({
+            content: '短时间访问次数过多',
+            meta: `ip被网站ban了，暂无法爬取，请以后再试`,
+            duration: 10000,
+            keepAliveOnHover: true
+          })
+          return
+        }
+        console.log('获取到页面数据：',res);
+        console.log('获取到章节数量：',$('.novel_sublist2').length);
       }
       done();
     },
@@ -105,7 +125,7 @@ const download = () => {
   
   if(processing.value)return
   init()
-  let urls = []
+  let urls:string[] = []
   for (let i = 0; i < formValue.value.count; i++) {
     urls[i] = `${formValue.value.url}${i + 1}/`
   }
@@ -114,10 +134,8 @@ const download = () => {
   // console.log('urls', urls);
   // console.log('proxy', proxy);
   const firstcrawler = new Crawler({
-    timeout: 5000,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-    },
+    timeout,
+    headers,
     proxy,
     callback: (error: any, res: any, done: any) => {
       if (error) {
@@ -126,6 +144,8 @@ const download = () => {
         const $ = res.$;
         title = $('.novel_title').text();
         name = $('.novel_writername').text();
+        console.log('获取元信息',title,name);
+        crawler.queue(urls);
       }
       done();
     },
@@ -133,12 +153,10 @@ const download = () => {
 
   const crawler = new Crawler({
     maxConnections: formValue.value.model,
-    timeout: 5000,
+    timeout,
     // rateLimit: 5000,
     retryTimeout:formValue.value.sleep*1000,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-    },
+    headers,
     proxy,
     callback: (error: any, res: any, done: any) => {
       if (error) {
@@ -159,11 +177,10 @@ const download = () => {
 
   // 启动爬虫
   firstcrawler.queue(formValue.value.url);
-  crawler.queue(urls);
+  
 }
-const computedFlag = computed(()=>progress.value === 100 && title)
-watch(computedFlag, val => {
-  if (val) {
+watch(progress, val => {
+  if (val===100&&title) {
     processing.value = false
     if(formValue.value.clip){
       writeClip()
@@ -177,6 +194,7 @@ const notification = useNotification()
 const write = () => {
   let data = temp.map((item, index) => `第${index + 1}章 ${item.stit}\n\n${item.content}`).join('\n')
   data = `${title}\n${name}\n` + data
+  
   fs.writeFile(path.join(userDataPath, `${title}.txt`), data, (err: any) => {
     if (err) {
       console.log(err);
@@ -226,11 +244,9 @@ const writeClip = () => {
 let errCount = 0
 const loopPing = (link:string)=>{
   const crawler = new Crawler({
-    timeout: 5000,
+    timeout,
     retries:0,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-    },
+    headers,
     proxy,
     callback: (error: any, res: any, done: any) => {
       
